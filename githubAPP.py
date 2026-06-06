@@ -4,15 +4,13 @@ import psycopg2.errors
 import pandas as pd
 
 # ==========================================
-# 1. 資料庫連線設定 (已完全升級為永久運行的 Aiven 雲端)
+# 1. 資料庫連線設定 
 # ==========================================
 def get_db_connection():
     try:
-        # 優先抓取標準層級
         db_uri = st.secrets["general"]["db_uri"]
     except Exception:
         try:
-            # 備援層級：萬一使用者在後台忘了打 [general]，直接抓第一層
             db_uri = st.secrets["db_uri"]
         except Exception as e:
             st.error("🚨 系統找不到 Secrets 連線金鑰，請檢查 Streamlit Cloud 後台設定！")
@@ -227,13 +225,13 @@ if st.session_state['user_id'] is not None:
     st.markdown("---")
 
     # ------------------------------------------
-    # 🔥 執行日常記帳局部組件 (呼叫 Fragment 1)
+    # 執行日常記帳局部組件
     # ------------------------------------------
     render_transaction_form(current_user_id)
     st.markdown("---")
 
     # ------------------------------------------
-    # 功能 B：歷史明細與錯帳刪除 (使用 View 查詢 + 加上防禦型自動回滾)
+    # 功能 B：歷史明細與錯帳刪除
     # ------------------------------------------
     st.subheader("📜 歷史記帳明細與刪除")
 
@@ -244,9 +242,7 @@ if st.session_state['user_id'] is not None:
         history_df = pd.read_sql(view_query, conn)
         temp_cursor.close()
     except Exception:
-        # 🚨 核心防禦：萬一前面有任何 SQL 打結，立刻強制回滾重置，不讓大連線死掉
         conn.rollback()
-        # 降級備援方案：若 View 還沒完全建立，改由純實體表 Join 頂替，絕不當機
         backup_query = f"SELECT t.tx_id, ua.bank_id, b.bank_name, ua.account_name, c.category_name, t.transaction_type, t.amount, t.tx_date, t.description FROM transactions t JOIN user_accounts ua ON t.account_id = ua.account_id JOIN banks b ON ua.bank_id = b.bank_id JOIN categories c ON t.category_id = c.category_id WHERE ua.user_id = {current_user_id} ORDER BY t.tx_date DESC"
         try:
             history_df = pd.read_sql(backup_query, conn)
@@ -296,7 +292,7 @@ if st.session_state['user_id'] is not None:
             if st.button("確認刪除此筆交易"):
                 cursor = conn.cursor()
                 try:
-                    # ✨ 刪除交易紀錄，雲端設定好的 Trigger 會隔空自動將金額校正扣回或加回帳戶餘額！
+                    # 刪除交易紀錄，雲端設定好的 Trigger 會隔空自動將金額校正扣回或加回帳戶餘額！
                     cursor.execute("DELETE FROM transactions WHERE tx_id = %s", (tx_to_delete['tx_id'],))
                     conn.commit()
                     st.success(f"交易序號 {tx_to_delete['tx_id']} 已刪除！資料庫 Trigger 已跨時空將金額完美校正。")
@@ -310,7 +306,7 @@ if st.session_state['user_id'] is not None:
     st.markdown("---")
 
     # ------------------------------------------
-    # 🔥 執行開戶綁定局部組件 (呼叫 Fragment 2)
+    # 執行開戶綁定局部組件
     # ------------------------------------------
     render_bank_binding_form(current_user_id)
     st.markdown("---")
@@ -319,5 +315,5 @@ if st.session_state['user_id'] is not None:
     conn.close()
 
 else:
-    st.title("💰 歡迎使用個人銀行記帳系統")
+    st.title("💰 歡迎使用螞蟻記帳系統")
     st.info("👈 請先透過左側邊欄進行【會員登入】或【註冊新會員】以開始使用系統。")
