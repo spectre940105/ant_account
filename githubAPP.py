@@ -186,10 +186,9 @@ def render_bank_binding_form(current_user_id):
 # ==========================================
 @st.fragment
 def rename_user_account_alias(current_user_id):
-    st.subheader("修改個人帳戶別名")
+    st.subheader("💳 修改個人帳戶別名")
     supabase = get_supabase_client()
 
-    # 1. 撈出「這個登入使用者」自己擁有的所有帳戶（含對應的銀行官方名稱）
     try:
         acc_res = supabase.table("user_accounts").select("account_id, bank_id, account_name, balance").eq("user_id", current_user_id).execute()
         user_acc_df = pd.DataFrame(acc_res.data)
@@ -203,8 +202,9 @@ def rename_user_account_alias(current_user_id):
         user_acc_df = pd.DataFrame()
     
     if not user_acc_df.empty:
-        # 讓使用者在下拉選單中看見他有哪些帳戶
-        user_acc_df['selectbox_display'] = user_acc_df.apply(lambda row: f"【{row.get('bank_name', '未知銀行')}】{row.get('account_name')} (目前餘額: {int(float(row.get('balance', 0)))})", axis=1)
+        user_acc_df['selectbox_display'] = user_acc_df.apply(
+            lambda row: f"【{row.get('bank_name', '未知銀行')}】{row.get('account_name')} (目前餘額: {int(float(row.get('balance', 0)))})", axis=1
+        )
         
         selected_account = st.selectbox(
             "選擇要重新命名的個人帳戶",
@@ -213,27 +213,37 @@ def rename_user_account_alias(current_user_id):
             key="rename_account_select"
         )
         
-        # 安全取得當前使用者自訂的別名作為輸入框預設值
         current_alias = selected_account.get('account_name', '') if selected_account else ''
         new_account_name = st.text_input("輸入新的帳戶別名 (例如：常用生活費、非必要支出金庫)", value=current_alias, key="rename_account_input")
         
         if st.button("確認修改帳戶別名", key="rename_account_btn") and selected_account:
             final_name = new_account_name.strip()
+            
+            # ✨ 終極防呆防線：如果使用者留空，用最安全的後端即時查詢，直接撈出該銀行原名！
             if not final_name:
-                final_name = selected_account.get('bank_name', '未命名帳戶').strip()
-            else:
                 try:
-                    supabase.table("user_accounts")\
-                        .update({"account_name": final_name})\
-                        .eq("account_id", selected_account['account_id'])\
-                        .execute()
-                        
-                    st.success(f"🎉 帳戶別名已成功修改為：{final_name}！")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"修改失敗：{str(e)}")
+                    # 用當前選取帳戶的 bank_id 去 banks 表查出最真實的 bank_name
+                    real_bank_res = supabase.table("banks").select("bank_name").eq("bank_id", selected_account['bank_id']).execute()
+                    if real_bank_res.data:
+                        final_name = real_bank_res.data[0]['bank_name']
+                    else:
+                        final_name = "未命名帳戶"
+                except Exception:
+                    final_name = "未命名帳戶"
+            
+            try:
+                # 正式將處理好的名字（不論是自訂還是回滾的官方名稱）寫入資料庫
+                supabase.table("user_accounts")\
+                    .update({"account_name": final_name})\
+                    .eq("account_id", selected_account['account_id'])\
+                    .execute()
+                    
+                st.success(f"🎉 帳戶別名已成功修改為：{final_name}！")
+                st.rerun()
+            except Exception as e:
+                st.error(f"修改失敗：{str(e)}")
     else:
-        st.info("💡 您目前尚未綁定任何銀行帳戶")
+        st.info("您目前尚未綁定任何銀行帳戶。")
     
 # ==========================================
 # 7. 主畫面流程調度中心
