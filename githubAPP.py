@@ -262,10 +262,12 @@ if st.session_state['user_id'] is not None:
     # 🚀 2. 總資產餘額與隱藏開關控制區 (100% 安全的全域 Session 記憶架構)
     col_metric, col_privacy = st.columns([3, 1])
     
+    col_metric, col_privacy = st.columns([3, 1])
+    
     with col_privacy:
         st.write("")
         
-        # 安全回呼函數：開關切換時，即時把最新狀態同步回雲端該使用者的資料列中
+        # 安全回呼函數：開關切換時，負責默默在背景將狀態存回雲端
         def update_privacy_preference():
             new_status = st.session_state["privacy_mode"]
             try:
@@ -273,13 +275,13 @@ if st.session_state['user_id'] is not None:
                     .update({"hide_balance_pref": new_status})\
                     .eq("user_id", current_user_id)\
                     .execute()
-                # 同步更新全域變數，確保其他區塊讀取一致
                 st.session_state['hide_balance'] = new_status
             except Exception:
                 pass
 
-        # 渲染開關：初始值死死綁定登入時載入的偏好
-        st.toggle(
+        # 渲染開關：預設值綁定上次載入的記憶
+        # ✨ 我們將這行移動到渲染 metric 的前面，確保前端能即時拿到 privacy_mode 的控制權
+        hide_balance_toggle = st.toggle(
             "隱藏餘額", 
             value=st.session_state.get('hide_balance', False), 
             key="privacy_mode",
@@ -287,11 +289,12 @@ if st.session_state['user_id'] is not None:
         )
 
     with col_metric:
-        # ✨ 完美修正：這裡直接讀取全域狀態，不管是切換還是重新登入，絕對都不會再噴 NameError
-        if st.session_state.get('hide_balance', False):
-            st.metric(label="💰總資產餘額 (隱藏)", value="****** 元")
+        # ✨ 終極修復點：直接讀取此時此刻開關元件的真實狀態（st.session_state["privacy_mode"]）
+        # 這樣一來，只要手一滑開關，底下的數字就會完全零延遲，瞬間切換成金鑰隱藏或顯示！
+        if st.session_state.get("privacy_mode", False):
+            st.metric(label="💰 總資產餘額 (隱藏)", value="****** 元")
         else:
-            st.metric(label="💰總資產餘額", value=f"{total_balance:,.2f} 元")
+            st.metric(label="💰 總資產餘額", value=f"{total_balance:,.2f} 元")
             
     st.markdown("---")
 
