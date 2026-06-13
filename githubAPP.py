@@ -263,26 +263,19 @@ if st.session_state['user_id'] is not None:
     with col_privacy:
         st.write("")
         def update_privacy_preference():
-                    # 直接從 toggle 元件的 key 抓取最新切換狀態
-                    new_status = st.session_state["privacy_mode"]
-                    try:
-                        # 即時儲存到 Supabase 資料庫
-                        supabase.table("users")\
-                            .update({"hide_balance_pref": new_status})\
-                            .eq("user_id", current_user_id)\
-                            .execute()
-                        # 同步更新 Session State 狀態
-                        st.session_state['hide_balance'] = new_status
-                    except Exception:
-                        pass
-        
-                # 2. 渲染開關，預設值死死綁定登入時從資料庫載入的 st.session_state['hide_balance']
-                hide_balance = st.toggle(
-                    "隱藏餘額", 
+            new_status = st.session_state["privacy_mode"]
+            try:
+                supabase.table("users")\
+                .update({"hide_balance_pref": new_status})\
+                .eq("user_id", current_user_id)\
+                .execute()
+                st.session_state['hide_balance'] = new_status
+            except Exception:
+                pass
+                hide_balance = st.toggle("隱藏餘額", 
                     value=st.session_state.get('hide_balance', False), 
                     key="privacy_mode",
-                    on_change=update_privacy_preference
-                )
+                    on_change=update_privacy_preference)
     with col_metric:
         if hide_balance:
             st.metric(label="💰總資產餘額 (隱藏)", value="****** 元")
