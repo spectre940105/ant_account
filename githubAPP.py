@@ -219,10 +219,9 @@ def rename_user_account_alias(current_user_id):
         
         if st.button("確認修改帳戶別名", key="rename_account_btn") and selected_account:
             if not new_account_name.strip():
-                st.error("帳戶別名不能留空喔！")
+                new_account_name = selected_accunt.get('bank_name','未命名帳戶').strip()
             else:
                 try:
-                    # 2. 精準 UPDATE 對應的 account_id，只動 account_name 欄位
                     supabase.table("user_accounts")\
                         .update({"account_name": new_account_name.strip()})\
                         .eq("account_id", selected_account['account_id'])\
