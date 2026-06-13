@@ -45,6 +45,7 @@ if st.session_state['user_id'] is None:
                         user = user_data[0]
                         st.session_state['user_id'] = user['user_id']
                         st.session_state['username'] = user['username']
+                        st.session_state['hide_balance'] = user.get('hide_balance_pref', False)
                         st.sidebar.success(f"歡迎回來，{user['username']}！")
                         st.rerun()
                     else:
@@ -262,7 +263,17 @@ if st.session_state['user_id'] is not None:
     with col_privacy:
         st.write("")
         hide_balance = st.toggle("隱藏餘額", value=False, key="privacy_mode")
-
+        if hide_balance != current_pref:
+            try:
+                supabase.table("users")\
+                    .update({"hide_balance_pref": hide_balance})\
+                    .eq("user_id", current_user_id)\
+                    .execute()
+                # 同步更新 Session 狀態
+                st.session_state['hide_balance'] = hide_balance
+                st.rerun()
+            except Exception as e:
+                pass
     with col_metric:
         if hide_balance:
             st.metric(label="💰總資產餘額 (隱藏)", value="****** 元")
