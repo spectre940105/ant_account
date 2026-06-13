@@ -220,7 +220,7 @@ def rename_user_account_alias(current_user_id):
         if st.button("確認修改帳戶別名", key="rename_account_btn") and selected_account:
             final_name = new_account_name.strip()
             if not final_name:
-                final_name = selected_accunt.get('bank_name','未命名帳戶').strip()
+                final_name = selected_accunt.get('bank_name', '未命名帳戶').strip()
             else:
                 try:
                     supabase.table("user_accounts")\
