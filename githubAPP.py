@@ -7,15 +7,7 @@ import pandas as pd
 # 1. 資料庫連線設定 
 # ==========================================
 def get_db_connection():
-    conn = psycopg2.connect(
-        host=st.secrets["supabase"]["host"],
-        port=st.secrets["supabase"]["port"],
-        user=st.secrets["supabase"]["user"],
-        password=st.secrets["supabase"]["password"],
-        database=st.secrets["supabase"]["database"],
-        sslmode=st.secrets["supabase"]["sslmode"]
-    )
-    return conn
+    return psycopg2.connect(st.secrets["general"]["db_uri"])
 # ==========================================
 # 2. 初始化 Session State (身分驗證狀態管理)
 # ==========================================
