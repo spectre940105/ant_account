@@ -189,36 +189,44 @@ def render_bank_binding_form(current_user_id):
 # 6. 銀行名稱修改區
 # ==========================================
 
-st.subheader("🏦 銀行名稱修改區")
+st.subheader("🏦 銀行名稱修正區")
 
 # 1. 撈出目前所有的銀行供選擇
-banks_df = supabase.table("banks").select("*").execute().data
+try:
+    banks_df = supabase.table("banks").select("*").execute().data
+except Exception as e:
+    banks_df = []
 
-if banks_df:
-    # 讓使用者選擇哪一家銀行要改名
+if banks_df and len(banks_df) > 0:
+    # ✨ 加上安全防空與 get 檢查的 selectbox
     selected_bank = st.selectbox(
         "選擇要修改名稱的銀行",
         options=banks_df,
-        format_func=lambda x: f"{x['bank_id']} | {x['bank_name']}"
+        format_func=lambda x: f"{x.get('bank_id', '無ID')} | {x.get('bank_name', '無名稱')}" if x is not None else ""
     )
     
-    # 輸入新的名字
-    new_bank_name = st.text_input("輸入新的銀行名稱", value=selected_bank['bank_name'])
+    # 安全取得當前名稱作為預設值
+    current_name = selected_bank.get('bank_name', '') if selected_bank else ''
+    new_bank_name = st.text_input("輸入新的銀行名稱", value=current_name)
     
-    if st.button("確認修改銀行名稱"):
+    if st.button("確認修改銀行名稱") and selected_bank:
         try:
-            # 2. 直接發射 UPDATE 語法去 Supabase 修改
-            supabase.table("banks")\
-                .update({"bank_name": new_bank_name})\
-                .eq("bank_id", selected_bank['bank_id'])\
-                .execute()
-                
-            st.success(f"🎉 銀行名稱已成功修改為：{new_bank_name}！")
-            st.rerun()
+            # 取得該銀行的主鍵 ID
+            bid = selected_bank.get('bank_id')
+            if bid:
+                supabase.table("banks")\
+                    .update({"bank_name": new_bank_name})\
+                    .eq("bank_id", bid)\
+                    .execute()
+                    
+                st.success(f"🎉 銀行名稱已成功修改為：{new_bank_name}！")
+                st.rerun()
+            else:
+                st.error("找不到該銀行的 ID，無法修改。")
         except Exception as e:
             st.error(f"修改失敗：{str(e)}")
 else:
-    st.info("目前資料庫中沒有銀行資料。")
+    st.info("💡 目前資料庫中沒有銀行資料。請先確認「banks」資料表內是否有建立預設的銀行資料（例如：臺灣銀行、玉山銀行）。")
     
 # ==========================================
 # 7. 主畫面流程調度中心
