@@ -259,13 +259,13 @@ if st.session_state['user_id'] is not None:
     user_balance_df = pd.DataFrame(balance_res.data)
     total_balance = user_balance_df['balance'].sum() if not user_balance_df.empty else 0.0
 
-    # 🚀 2. 渲染總資產餘額與隱藏開關控制區 (Callback 安全架構版)
+    # 🚀 2. 總資產餘額與隱藏開關控制區 (100% 安全的全域 Session 記憶架構)
     col_metric, col_privacy = st.columns([3, 1])
     
     with col_privacy:
         st.write("")
         
-        # 安全回呼函數：開關切換時自動同步雲端資料庫
+        # 安全回呼函數：開關切換時，即時把最新狀態同步回雲端該使用者的資料列中
         def update_privacy_preference():
             new_status = st.session_state["privacy_mode"]
             try:
@@ -273,21 +273,21 @@ if st.session_state['user_id'] is not None:
                     .update({"hide_balance_pref": new_status})\
                     .eq("user_id", current_user_id)\
                     .execute()
+                # 同步更新全域變數，確保其他區塊讀取一致
                 st.session_state['hide_balance'] = new_status
             except Exception:
                 pass
 
-        # 渲染開關，狀態死死綁定 Session State 的記憶
-        user_hide_pref = st.session_state.get('hide_balance', False)
+        # 渲染開關：初始值死死綁定登入時載入的偏好
         st.toggle(
             "隱藏餘額", 
-            value=user_hide_pref, 
+            value=st.session_state.get('hide_balance', False), 
             key="privacy_mode",
             on_change=update_privacy_preference
         )
 
     with col_metric:
-        # 直接拿 user_hide_pref 或者是 privacy_mode 當前的狀態來做畫面渲染，絕對不會報錯
+        # ✨ 完美修正：這裡直接讀取全域狀態，不管是切換還是重新登入，絕對都不會再噴 NameError
         if st.session_state.get('hide_balance', False):
             st.metric(label="💰總資產餘額 (隱藏)", value="****** 元")
         else:
@@ -358,7 +358,7 @@ if st.session_state['user_id'] is not None:
     # 🚀 5. 執行開戶綁定局部組件
     render_bank_binding_form(current_user_id)
     st.markdown("---")
-    # 🚀 6. 執行修改個人帳戶別名的下拉組件
+    # 🚀 6. 執行修改個人帳戶別名的下拉防呆組件
     rename_user_account_alias(current_user_id)
 
 else:
