@@ -185,9 +185,43 @@ def render_bank_binding_form(current_user_id):
         except Exception as e:
             st.error(f"載入銀行列表失敗：{e}")
 
-
 # ==========================================
-# 6. 主畫面流程調度中心
+# 6. 銀行名稱修改區
+# ==========================================
+
+st.subheader("🏦 銀行名稱修改區")
+
+# 1. 撈出目前所有的銀行供選擇
+banks_df = supabase.table("banks").select("*").execute().data
+
+if banks_df:
+    # 讓使用者選擇哪一家銀行要改名
+    selected_bank = st.selectbox(
+        "選擇要修改名稱的銀行",
+        options=banks_df,
+        format_func=lambda x: f"{x['bank_id']} | {x['bank_name']}"
+    )
+    
+    # 輸入新的名字
+    new_bank_name = st.text_input("輸入新的銀行名稱", value=selected_bank['bank_name'])
+    
+    if st.button("確認修改銀行名稱"):
+        try:
+            # 2. 直接發射 UPDATE 語法去 Supabase 修改
+            supabase.table("banks")\
+                .update({"bank_name": new_bank_name})\
+                .eq("bank_id", selected_bank['bank_id'])\
+                .execute()
+                
+            st.success(f"🎉 銀行名稱已成功修改為：{new_bank_name}！")
+            st.rerun()
+        except Exception as e:
+            st.error(f"修改失敗：{str(e)}")
+else:
+    st.info("目前資料庫中沒有銀行資料。")
+    
+# ==========================================
+# 7. 主畫面流程調度中心
 # ==========================================
 if st.session_state['user_id'] is not None:
     current_user_id = st.session_state['user_id']
