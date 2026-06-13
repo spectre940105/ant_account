@@ -3,7 +3,7 @@ import pandas as pd
 from supabase import create_client, Client 
 
 # ==========================================
-# 1. 初始化 Supabase 原生 API 客戶端 (完全免除 TCP 鎖 Port 煩惱)
+# 1. 初始化 Supabase 原生 API 客戶端
 # ==========================================
 def get_supabase_client() -> Client:
     url = st.secrets["supabase"]["url"]
@@ -11,7 +11,7 @@ def get_supabase_client() -> Client:
     return create_client(url, key)
 
 # ==========================================
-# 2. 初始化 Session State (身分驗證狀態管理)
+# 2. 初始化 Session State
 # ==========================================
 if 'user_id' not in st.session_state:
     st.session_state['user_id'] = None
@@ -19,7 +19,7 @@ if 'username' not in st.session_state:
     st.session_state['username'] = None
 
 # ==========================================
-# 3. 側邊欄：會員登入與註冊系統 (API 化)
+# 3. 側邊欄：會員登入與註冊系統
 # ==========================================
 st.sidebar.title("個人選單")
 
@@ -90,21 +90,18 @@ else:
 @st.fragment
 def render_transaction_form(current_user_id):
     st.subheader("📝 新增日常收支")
-    supabase = get_supabase_client()
+    supabase = get_supabase_client() # ✨ 確保每個組件內部都有正確拿取客戶端連線
 
     try:
-        # 🚀 轉換為 API 撈取該使用者帳戶 (含 Bank Name)
         acc_res = supabase.table("user_accounts").select("account_id, bank_id, account_name, balance").eq("user_id", current_user_id).execute()
         user_acc_df = pd.DataFrame(acc_res.data)
 
-        # 🚀 轉換為 API 撈取所有銀行基本資料對齊別名
         bank_res = supabase.table("banks").select("bank_id, bank_name").execute()
         bank_df = pd.DataFrame(bank_res.data)
         
         if not user_acc_df.empty and not bank_df.empty:
             user_acc_df = user_acc_df.merge(bank_df, on="bank_id", how="left")
 
-        # 🚀 轉換為 API 撈取分類
         cat_res = supabase.table("categories").select("category_id, category_name, category_type").execute()
         categories_df = pd.DataFrame(cat_res.data)
         categories_df['display'] = categories_df['category_name'] + " (" + categories_df['category_type'] + ")"
@@ -126,7 +123,6 @@ def render_transaction_form(current_user_id):
             tx_amount = st.number_input("交易金額", min_value=0.00, value=0.00, step=10.0)
             tx_desc = st.text_input("備註說明", placeholder="例如：購物、N月薪水")
 
-            # 🚀 透過 RPC 直接呼叫你在 Supabase 雲端建好的預存程序 (Stored Procedure)
             if st.button("確認送出記帳"):
                 try:
                     supabase.rpc("sp_inserttransaction", {
@@ -144,11 +140,11 @@ def render_transaction_form(current_user_id):
 
 
 # ==========================================
-# 5. 建立開戶綁定銀行局部刷新組件
+# 5. 建立開戶綁定銀行局部刷新組件 (Fragment 2)
 # ==========================================
 @st.fragment
 def render_bank_binding_form(current_user_id):
-    st.subheader("綁定銀行帳戶")
+    st.subheader("💳 綁定銀行帳戶")
     with st.expander("點擊展開 : 開戶功能"):
         supabase = get_supabase_client()
         try:
@@ -186,32 +182,31 @@ def render_bank_binding_form(current_user_id):
             st.error(f"載入銀行列表失敗：{e}")
 
 # ==========================================
-# 6. 銀行名稱修改區
+# 6. 銀行名稱修改區局部組件 (Fragment 3)
 # ==========================================
 @st.fragment
 def rename_bankname(current_user_id):
-    st.subheader("修改帳戶名稱")
-    # 1. 撈出目前所有的銀行供選擇
+    st.subheader("銀行名稱修正區")
+    supabase = get_supabase_client()
+
     try:
         banks_df = supabase.table("banks").select("*").execute().data
     except Exception as e:
         banks_df = []
     
     if banks_df and len(banks_df) > 0:
-        # ✨ 加上安全防空與 get 檢查的 selectbox
         selected_bank = st.selectbox(
             "選擇要修改名稱的銀行",
             options=banks_df,
-            format_func=lambda x: f"{x.get('bank_id', '無ID')} | {x.get('bank_name', '無名稱')}" if x is not None else ""
+            format_func=lambda x: f"{x.get('bank_id', '無ID')} | {x.get('bank_name', '無名稱')}" if x is not None else "",
+            key="rename_bank_select"
         )
         
-        # 安全取得當前名稱作為預設值
         current_name = selected_bank.get('bank_name', '') if selected_bank else ''
-        new_bank_name = st.text_input("輸入新的銀行名稱", value=current_name)
+        new_bank_name = st.text_input("輸入新的銀行名稱", value=current_name, key="rename_bank_input")
         
-        if st.button("確認修改銀行名稱") and selected_bank:
+        if st.button("確認修改銀行名稱", key="rename_bank_btn") and selected_bank:
             try:
-                # 取得該銀行的主鍵 ID
                 bid = selected_bank.get('bank_id')
                 if bid:
                     supabase.table("banks")\
@@ -226,7 +221,7 @@ def rename_bankname(current_user_id):
             except Exception as e:
                 st.error(f"修改失敗：{str(e)}")
     else:
-        st.info("💡 目前資料庫中沒有銀行資料。請先確認「banks」資料表內是否有建立預設的銀行資料（例如：臺灣銀行、玉山銀行）。")
+        st.info("💡 目前資料庫中沒有銀行資料。")
     
 # ==========================================
 # 7. 主畫面流程調度中心
@@ -237,7 +232,7 @@ if st.session_state['user_id'] is not None:
 
     supabase = get_supabase_client()
 
-    # 🚀 API 查詢總餘額
+    # API 查詢總餘額
     balance_res = supabase.table("user_accounts").select("balance").eq("user_id", current_user_id).execute()
     user_balance_df = pd.DataFrame(balance_res.data)
     
@@ -259,7 +254,7 @@ if st.session_state['user_id'] is not None:
     render_transaction_form(current_user_id)
     st.markdown("---")
 
-    # 🚀 API 查詢歷史明細 (直接讀取你在雲端建好的歷史明細檢視表 v_usertransactions)
+    # API 查詢歷史明細
     st.subheader("📜 歷史記帳明細與刪除")
     try:
         history_res = supabase.table("v_usertransactions").select("*").eq("user_id", current_user_id).order("tx_date", desc=True).execute()
@@ -299,15 +294,16 @@ if st.session_state['user_id'] is not None:
             st.dataframe(show_table, use_container_width=True)
 
             st.subheader("⚠️ 記錯帳刪除區")
+            # ✨ 完美修正：加上 if x is not None else "" 的防空盾牌，新帳號再也不會崩潰
             tx_to_delete = st.selectbox(
                 "選擇欲刪除的交易序號",
                 options=history_df.to_dict('records'),
-                format_func=lambda x: f"時間: {x['tx_date'].strftime('%Y-%m-%d')} | 帳戶: {x['account_name']} | 分類: {x['category_name']} | 金額: {int(float(x['amount']))} | 類型: {x['transaction_type']}"
+                format_func=lambda x: f"時間: {x['tx_date'].strftime('%Y-%m-%d')} | 帳戶: {x['account_name']} | 分類: {x['category_name']} | 金額: {int(float(x['amount']))} | 類型: {x['transaction_type']}" if x is not None else "",
+                key="delete_tx_select"
             )
 
-            if st.button("確認刪除此筆交易"):
+            if st.button("確認刪除此筆交易", key="delete_tx_btn") and tx_to_delete:
                 try:
-                    # 🚀 API 刪除紀錄，觸發雲端 Trigger 自動回滾金額
                     supabase.table("transactions").delete().eq("tx_id", tx_to_delete['tx_id']).execute()
                     st.success(f"交易序號 {tx_to_delete['tx_id']} 已刪除！")
                     st.rerun()
@@ -318,6 +314,7 @@ if st.session_state['user_id'] is not None:
     # 執行開戶綁定局部組件
     render_bank_binding_form(current_user_id)
     st.markdown("---")
+    # 執行修改銀行名稱局部組件 (放在最底部，安全又精準)
     rename_bankname(current_user_id)
 
 else:
