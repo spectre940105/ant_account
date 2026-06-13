@@ -262,7 +262,8 @@ if st.session_state['user_id'] is not None:
     col_metric, col_privacy = st.columns([3, 1])
     with col_privacy:
         st.write("")
-        hide_balance = st.toggle("隱藏餘額", value=False, key="privacy_mode")
+        current_pref = st.session_state.get('hide_balance', False)
+        hide_balance = st.toggle("隱藏餘額", value=current_pref, key="privacy_mode")
         if hide_balance != current_pref:
             try:
                 supabase.table("users")\
