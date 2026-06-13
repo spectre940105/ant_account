@@ -7,16 +7,14 @@ import pandas as pd
 # 1. 資料庫連線設定 
 # ==========================================
 def get_db_connection():
-    try:
-        db_uri = st.secrets["general"]["db_uri"]
-    except Exception:
-        try:
-            db_uri = st.secrets["db_uri"]
-        except Exception as e:
-            st.error("🚨 系統找不到 Secrets 連線金鑰，請檢查 Streamlit Cloud 後台設定！")
-            raise e
-
-    conn = psycopg2.connect(db_uri)
+    conn = psycopg2.connect(
+        host=st.secrets["supabase"]["host"],
+        port=st.secrets["supabase"]["port"],
+        user=st.secrets["supabase"]["user"],
+        password=st.secrets["supabase"]["password"],
+        database=st.secrets["supabase"]["database"],
+        sslmode=st.secrets["supabase"]["sslmode"]
+    )
     return conn
 # ==========================================
 # 2. 初始化 Session State (身分驗證狀態管理)
