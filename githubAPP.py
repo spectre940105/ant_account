@@ -244,6 +244,7 @@ def rename_user_account_alias(current_user_id):
                     st.error(f"修改失敗：{str(e)}")
         else:
             st.info("您目前尚未綁定任何銀行帳戶。")
+
 # ==========================================
 # 7. 主畫面流程調度中心
 # ==========================================
@@ -253,41 +254,52 @@ if st.session_state['user_id'] is not None:
 
     supabase = get_supabase_client()
 
-    # API 查詢總餘額
+    # 🚀 1. API 查詢總餘額
     balance_res = supabase.table("user_accounts").select("balance").eq("user_id", current_user_id).execute()
     user_balance_df = pd.DataFrame(balance_res.data)
-    
     total_balance = user_balance_df['balance'].sum() if not user_balance_df.empty else 0.0
 
+    # 🚀 2. 渲染總資產餘額與隱藏開關控制區 (Callback 安全架構版)
     col_metric, col_privacy = st.columns([3, 1])
+    
     with col_privacy:
         st.write("")
+        
+        # 安全回呼函數：開關切換時自動同步雲端資料庫
         def update_privacy_preference():
             new_status = st.session_state["privacy_mode"]
             try:
                 supabase.table("users")\
-                .update({"hide_balance_pref": new_status})\
-                .eq("user_id", current_user_id)\
-                .execute()
+                    .update({"hide_balance_pref": new_status})\
+                    .eq("user_id", current_user_id)\
+                    .execute()
                 st.session_state['hide_balance'] = new_status
             except Exception:
                 pass
-                hide_balance = st.toggle("隱藏餘額", 
-                    value=st.session_state.get('hide_balance', False), 
-                    key="privacy_mode",
-                    on_change=update_privacy_preference)
+
+        # 渲染開關，狀態死死綁定 Session State 的記憶
+        user_hide_pref = st.session_state.get('hide_balance', False)
+        st.toggle(
+            "隱藏餘額", 
+            value=user_hide_pref, 
+            key="privacy_mode",
+            on_change=update_privacy_preference
+        )
+
     with col_metric:
-        if hide_balance:
+        # 直接拿 user_hide_pref 或者是 privacy_mode 當前的狀態來做畫面渲染，絕對不會報錯
+        if st.session_state.get('hide_balance', False):
             st.metric(label="💰總資產餘額 (隱藏)", value="****** 元")
         else:
             st.metric(label="💰總資產餘額", value=f"{total_balance:,.2f} 元")
+            
     st.markdown("---")
 
-    # 執行日常記帳局部組件
+    # 🚀 3. 執行日常記帳局部組件
     render_transaction_form(current_user_id)
     st.markdown("---")
 
-    # API 查詢歷史明細
+    # 🚀 4. API 查詢歷史明細 (直接讀取檢視表 public.v_usertransactions)
     st.markdown("📜 歷史記帳明細與刪除")
     try:
         history_res = supabase.table("v_usertransactions").select("*").eq("user_id", current_user_id).order("tx_date", desc=True).execute()
@@ -327,7 +339,6 @@ if st.session_state['user_id'] is not None:
             st.dataframe(show_table, use_container_width=True)
 
             st.markdown("⚠️ 記錯帳刪除區")
-            # ✨ 完美修正：加上 if x is not None else "" 的防空盾牌，新帳號再也不會崩潰
             tx_to_delete = st.selectbox(
                 "選擇欲刪除的交易序號",
                 options=history_df.to_dict('records'),
@@ -344,10 +355,10 @@ if st.session_state['user_id'] is not None:
                     st.error(f"刪除失敗：{e}")
 
     st.markdown("---")
-    # 執行開戶綁定局部組件
+    # 🚀 5. 執行開戶綁定局部組件
     render_bank_binding_form(current_user_id)
     st.markdown("---")
-    # 執行修改銀行名稱局部組件 (放在最底部，安全又精準)
+    # 🚀 6. 執行修改個人帳戶別名的下拉組件
     rename_user_account_alias(current_user_id)
 
 else:
