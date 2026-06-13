@@ -188,7 +188,7 @@ def render_bank_binding_form(current_user_id):
 # ==========================================
 # 6. 銀行名稱修改區
 # ==========================================
-@st.frangment
+@st.fragment
 def rename_bankname(current_user_id):
     st.subheader("修改帳戶名稱")
     # 1. 撈出目前所有的銀行供選擇
