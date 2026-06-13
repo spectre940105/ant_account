@@ -35,7 +35,7 @@ if st.session_state['user_id'] is None:
                 supabase = get_supabase_client()
                 try:
                     response = supabase.table("users") \
-                        .select("user_id, username") \
+                        .select("user_id, username","hide_balance_pref") \
                         .eq("username", auth_username) \
                         .eq("password_hash", auth_password) \
                         .execute()
