@@ -144,7 +144,7 @@ def render_transaction_form(current_user_id):
 # ==========================================
 @st.fragment
 def render_bank_binding_form(current_user_id):
-    st.subheader("💳 綁定銀行帳戶")
+    st.markdown("💳 綁定銀行帳戶")
     with st.expander("點擊展開 : 開戶功能"):
         supabase = get_supabase_client()
         try:
@@ -186,65 +186,63 @@ def render_bank_binding_form(current_user_id):
 # ==========================================
 @st.fragment
 def rename_user_account_alias(current_user_id):
-    st.subheader("💳 修改個人帳戶別名")
-    supabase = get_supabase_client()
+    # 🚀 1. 用 st.expander 建立下拉折疊選單，並在裡面使用較小的 ### 字體作為標題
+    with st.expander("⚙️ 點擊展開：修改個人帳戶別名", expanded=False):
+        supabase = get_supabase_client()
 
-    try:
-        acc_res = supabase.table("user_accounts").select("account_id, bank_id, account_name, balance").eq("user_id", current_user_id).execute()
-        user_acc_df = pd.DataFrame(acc_res.data)
-        
-        bank_res = supabase.table("banks").select("bank_id, bank_name").execute()
-        bank_df = pd.DataFrame(bank_res.data)
-        
-        if not user_acc_df.empty and not bank_df.empty:
-            user_acc_df = user_acc_df.merge(bank_df, on="bank_id", how="left")
-    except Exception:
-        user_acc_df = pd.DataFrame()
-    
-    if not user_acc_df.empty:
-        user_acc_df['selectbox_display'] = user_acc_df.apply(
-            lambda row: f"【{row.get('bank_name', '未知銀行')}】{row.get('account_name')} (目前餘額: {int(float(row.get('balance', 0)))})", axis=1
-        )
-        
-        selected_account = st.selectbox(
-            "選擇要重新命名的個人帳戶",
-            options=user_acc_df.to_dict('records'),
-            format_func=lambda x: x.get('selectbox_display', '') if x is not None else "",
-            key="rename_account_select"
-        )
-        
-        current_alias = selected_account.get('account_name', '') if selected_account else ''
-        new_account_name = st.text_input("輸入新的帳戶別名 (例如：常用生活費、非必要支出金庫)", value=current_alias, key="rename_account_input")
-        
-        if st.button("確認修改帳戶別名", key="rename_account_btn") and selected_account:
-            final_name = new_account_name.strip()
+        try:
+            acc_res = supabase.table("user_accounts").select("account_id, bank_id, account_name, balance").eq("user_id", current_user_id).execute()
+            user_acc_df = pd.DataFrame(acc_res.data)
             
-            # ✨ 終極防呆防線：如果使用者留空，用最安全的後端即時查詢，直接撈出該銀行原名！
-            if not final_name:
-                try:
-                    # 用當前選取帳戶的 bank_id 去 banks 表查出最真實的 bank_name
-                    real_bank_res = supabase.table("banks").select("bank_name").eq("bank_id", selected_account['bank_id']).execute()
-                    if real_bank_res.data:
-                        final_name = real_bank_res.data[0]['bank_name']
-                    else:
+            bank_res = supabase.table("banks").select("bank_id, bank_name").execute()
+            bank_df = pd.DataFrame(bank_res.data)
+            
+            if not user_acc_df.empty and not bank_df.empty:
+                user_acc_df = user_acc_df.merge(bank_df, on="bank_id", how="left")
+        except Exception:
+            user_acc_df = pd.DataFrame()
+        
+        if not user_acc_df.empty:
+            user_acc_df['selectbox_display'] = user_acc_df.apply(
+                lambda row: f"【{row.get('bank_name', '未知銀行')}】{row.get('account_name')} (目前餘額: {int(float(row.get('balance', 0)))})", axis=1
+            )
+            
+            selected_account = st.selectbox(
+                "選擇要重新命名的個人帳戶",
+                options=user_acc_df.to_dict('records'),
+                format_func=lambda x: x.get('selectbox_display', '') if x is not None else "",
+                key="rename_account_select"
+            )
+            
+            current_alias = selected_account.get('account_name', '') if selected_account else ''
+            new_account_name = st.text_input("輸入新的帳戶別名 (例如：常用生活費、非必要支出金庫)", value=current_alias, key="rename_account_input")
+            
+            if st.button("確認修改帳戶別名", key="rename_account_btn") and selected_account:
+                final_name = new_account_name.strip()
+                
+                # 終極防呆防線：如果使用者留空，直接撈出該銀行原名
+                if not final_name:
+                    try:
+                        real_bank_res = supabase.table("banks").select("bank_name").eq("bank_id", selected_account['bank_id']).execute()
+                        if real_bank_res.data:
+                            final_name = real_bank_res.data[0]['bank_name']
+                        else:
+                            final_name = "未命名帳戶"
+                    except Exception:
                         final_name = "未命名帳戶"
-                except Exception:
-                    final_name = "未命名帳戶"
-            
-            try:
-                # 正式將處理好的名字（不論是自訂還是回滾的官方名稱）寫入資料庫
-                supabase.table("user_accounts")\
-                    .update({"account_name": final_name})\
-                    .eq("account_id", selected_account['account_id'])\
-                    .execute()
-                    
-                st.success(f"🎉 帳戶別名已成功修改為：{final_name}！")
-                st.rerun()
-            except Exception as e:
-                st.error(f"修改失敗：{str(e)}")
-    else:
-        st.info("您目前尚未綁定任何銀行帳戶。")
-    
+                
+                try:
+                    supabase.table("user_accounts")\
+                        .update({"account_name": final_name})\
+                        .eq("account_id", selected_account['account_id'])\
+                        .execute()
+                        
+                    st.success(f"🎉 帳戶別名已成功修改為：{final_name}！")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"修改失敗：{str(e)}")
+        else:
+            st.info("您目前尚未綁定任何銀行帳戶。")
 # ==========================================
 # 7. 主畫面流程調度中心
 # ==========================================
@@ -277,7 +275,7 @@ if st.session_state['user_id'] is not None:
     st.markdown("---")
 
     # API 查詢歷史明細
-    st.subheader("📜 歷史記帳明細與刪除")
+    st.markdown("📜 歷史記帳明細與刪除")
     try:
         history_res = supabase.table("v_usertransactions").select("*").eq("user_id", current_user_id).order("tx_date", desc=True).execute()
         history_df = pd.DataFrame(history_res.data)
