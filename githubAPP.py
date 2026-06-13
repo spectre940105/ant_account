@@ -218,16 +218,17 @@ def rename_user_account_alias(current_user_id):
         new_account_name = st.text_input("輸入新的帳戶別名 (例如：常用生活費、非必要支出金庫)", value=current_alias, key="rename_account_input")
         
         if st.button("確認修改帳戶別名", key="rename_account_btn") and selected_account:
-            if not new_account_name.strip():
-                new_account_name = selected_accunt.get('bank_name','未命名帳戶').strip()
+            final_name = new_account_name.strip()
+            if not final_name:
+                final_name = selected_accunt.get('bank_name','未命名帳戶').strip()
             else:
                 try:
                     supabase.table("user_accounts")\
-                        .update({"account_name": new_account_name.strip()})\
+                        .update({"account_name": final_name})\
                         .eq("account_id", selected_account['account_id'])\
                         .execute()
                         
-                    st.success(f"🎉 帳戶別名已成功修改為：{new_account_name.strip()}！")
+                    st.success(f"🎉 帳戶別名已成功修改為：{final_name}！")
                     st.rerun()
                 except Exception as e:
                     st.error(f"修改失敗：{str(e)}")
