@@ -1,14 +1,15 @@
 import streamlit as st
-import psycopg2
-import psycopg2.errors
 import pandas as pd
+from supabase import create_client, Client 
 
 # ==========================================
-# 1. 資料庫連線設定 
+# 1. 初始化 Supabase 原生 API 客戶端 (完全免除 TCP 鎖 Port 煩惱)
 # ==========================================
-def get_db_connection():
-    conn = psycopg2.connect(st.secrets["general"]["db_uri"])
-    return conn
+def get_supabase_client() -> Client:
+    url = st.secrets["supabase"]["url"]
+    key = st.secrets["supabase"]["key"]
+    return create_client(url, key)
+
 # ==========================================
 # 2. 初始化 Session State (身分驗證狀態管理)
 # ==========================================
@@ -18,7 +19,7 @@ if 'username' not in st.session_state:
     st.session_state['username'] = None
 
 # ==========================================
-# 3. 側邊欄：會員登入與註冊系統
+# 3. 側邊欄：會員登入與註冊系統 (API 化)
 # ==========================================
 st.sidebar.title("個人選單")
 
@@ -31,21 +32,25 @@ if st.session_state['user_id'] is None:
         auth_password = st.sidebar.text_input("密碼 (Password)", type="password", key="auth_pass")
         if st.sidebar.button("登入"):
             if auth_username and auth_password:
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                # 📌 亮點：PostgreSQL 參數化查詢一律使用 %s，且表名皆為安全小寫
-                cursor.execute("SELECT user_id, username FROM users WHERE username = %s AND password_hash = %s", (auth_username, auth_password))
-                user = cursor.fetchone()
-                cursor.close()
-                conn.close()
-
-                if user:
-                    st.session_state['user_id'] = user[0]
-                    st.session_state['username'] = user[1]
-                    st.sidebar.success(f"歡迎回來，{user[1]}！")
-                    st.rerun()
-                else:
-                    st.sidebar.error("帳號或密碼錯誤！")
+                supabase = get_supabase_client()
+                try:
+                    response = supabase.table("users") \
+                        .select("user_id, username") \
+                        .eq("username", auth_username) \
+                        .eq("password_hash", auth_password) \
+                        .execute()
+                    
+                    user_data = response.data
+                    if user_data:
+                        user = user_data[0]
+                        st.session_state['user_id'] = user['user_id']
+                        st.session_state['username'] = user['username']
+                        st.sidebar.success(f"歡迎回來，{user['username']}！")
+                        st.rerun()
+                    else:
+                        st.sidebar.error("帳號或密碼錯誤！")
+                except Exception as e:
+                    st.sidebar.error(f"連線異常：{e}")
             else:
                 st.sidebar.warning("請輸入帳號與密碼")
 
@@ -56,17 +61,19 @@ if st.session_state['user_id'] is None:
         auth_email = st.sidebar.text_input("電子信箱 (Email)", key="auth_email")
         if st.sidebar.button("註冊"):
             if auth_username and auth_password:
-                conn = get_db_connection()
-                cursor = conn.cursor()
+                supabase = get_supabase_client()
                 try:
-                    cursor.execute("INSERT INTO users (username, password_hash, email) VALUES (%s, %s, %s)", (auth_username, auth_password, auth_email))
-                    conn.commit()
+                    supabase.table("users").insert({
+                        "username": auth_username,
+                        "password_hash": auth_password,
+                        "email": auth_email
+                    }).execute()
                     st.sidebar.success("註冊成功！請切換至登入畫面。")
-                except psycopg2.errors.UniqueViolation:
-                    st.sidebar.error("此帳號已被註冊！")
-                finally:
-                    cursor.close()
-                    conn.close()
+                except Exception as e:
+                    if "users_username_key" in str(e) or "duplicate" in str(e).lower():
+                        st.sidebar.error("此帳號已被註冊！")
+                    else:
+                        st.sidebar.error(f"註冊失敗：{e}")
             else:
                 st.sidebar.warning("帳號與密碼為必填項目")
 else:
@@ -83,16 +90,23 @@ else:
 @st.fragment
 def render_transaction_form(current_user_id):
     st.subheader("📝 新增日常收支")
-
-    local_conn = get_db_connection()
+    supabase = get_supabase_client()
 
     try:
-        # 撈取該使用者目前擁有的帳戶
-        user_acc_query = f"SELECT ua.account_id, b.bank_id, b.bank_name, ua.account_name, ua.balance FROM user_accounts ua JOIN banks b ON ua.bank_id = b.bank_id WHERE ua.user_id = {current_user_id}"
-        user_acc_df = pd.read_sql(user_acc_query, local_conn)
+        # 🚀 轉換為 API 撈取該使用者帳戶 (含 Bank Name)
+        acc_res = supabase.table("user_accounts").select("account_id, bank_id, account_name, balance").eq("user_id", current_user_id).execute()
+        user_acc_df = pd.DataFrame(acc_res.data)
 
-        # 撈取所有記帳分類 (將原本的 type 修正為正確的欄位名稱 category_type)
-        categories_df = pd.read_sql("SELECT category_id, category_name, category_type FROM categories", local_conn)
+        # 🚀 轉換為 API 撈取所有銀行基本資料對齊別名
+        bank_res = supabase.table("banks").select("bank_id, bank_name").execute()
+        bank_df = pd.DataFrame(bank_res.data)
+        
+        if not user_acc_df.empty and not bank_df.empty:
+            user_acc_df = user_acc_df.merge(bank_df, on="bank_id", how="left")
+
+        # 🚀 轉換為 API 撈取分類
+        cat_res = supabase.table("categories").select("category_id, category_name, category_type").execute()
+        categories_df = pd.DataFrame(cat_res.data)
         categories_df['display'] = categories_df['category_name'] + " (" + categories_df['category_type'] + ")"
 
         if user_acc_df.empty:
@@ -100,7 +114,6 @@ def render_transaction_form(current_user_id):
         else:
             user_acc_df['display'] = user_acc_df.apply(lambda row: f"{row['bank_id']} {row['account_name']} (餘額: {int(float(row['balance']))})", axis=1)
 
-            # 使用三欄讓使用者同時選擇帳戶、收支類型與分類
             col_acc, col_type, col_cat = st.columns([3, 2, 3])
             with col_acc:
                 chosen_acc = st.selectbox("帳戶選擇", options=user_acc_df.to_dict('records'), format_func=lambda x: x['display'])
@@ -113,30 +126,26 @@ def render_transaction_form(current_user_id):
             tx_amount = st.number_input("交易金額", min_value=0.00, value=0.00, step=10.0)
             tx_desc = st.text_input("備註說明", placeholder="例如：購物、N月薪水")
 
-            # 呼叫雲端建好的預存程序 (sp_InsertTransaction)
+            # 🚀 透過 RPC 直接呼叫你在 Supabase 雲端建好的預存程序 (Stored Procedure)
             if st.button("確認送出記帳"):
-                cursor = local_conn.cursor()
                 try:
-                    cursor.execute(
-                        "CALL sp_inserttransaction (%s, %s, %s::numeric, %s::text);",
-                        (int(chosen_acc['account_id']), int(chosen_cat['category_id']), float(tx_amount), str(tx_desc))
-                    )
-                    local_conn.commit()
+                    supabase.rpc("sp_inserttransaction", {
+                        "p_account_id": int(chosen_acc['account_id']),
+                        "p_category_id": int(chosen_cat['category_id']),
+                        "p_amount": float(tx_amount),
+                        "p_description": str(tx_desc)
+                    }).execute()
                     st.success("記帳成功！資產餘額已自動計算更新。")
-                    cursor.close()
                     st.rerun()
-
-                except psycopg2.Error as e:
+                except Exception as e:
                     err_msg = str(e)
-                    if "記帳失敗" in err_msg:
-                        clean_msg = err_msg.split("CONTEXT:")[0].strip()
+                    if "餘額不足" in err_msg or "記帳失敗" in err_msg:
+                        clean_msg = "記帳失敗：帳戶餘額不足！"
                     else:
-                        clean_msg = "餘額不足！"
+                        clean_msg = "交易失敗，請檢查餘額！"
                     st.error(f"⚠️ {clean_msg}")
-                finally:
-                    if 'cursor' in locals(): cursor.close()
-    finally:
-        local_conn.close()
+    except Exception as e:
+        st.error(f"組件載入異常：{e}")
 
 
 # ==========================================
@@ -146,9 +155,10 @@ def render_transaction_form(current_user_id):
 def render_bank_binding_form(current_user_id):
     st.subheader("綁定銀行帳戶")
     with st.expander("點擊展開 : 開戶功能"):
-        local_conn = get_db_connection()
+        supabase = get_supabase_client()
         try:
-            all_banks_df = pd.read_sql("SELECT bank_id, bank_name FROM banks", local_conn)
+            bank_res = supabase.table("banks").select("bank_id, bank_name").execute()
+            all_banks_df = pd.DataFrame(bank_res.data)
             all_banks_df['display'] = all_banks_df['bank_id'] + " - " + all_banks_df['bank_name']
 
             selected_bank = st.selectbox("選擇要綁定的銀行", options=all_banks_df.to_dict('records'), format_func=lambda x: x['display'])
@@ -159,54 +169,47 @@ def render_bank_binding_form(current_user_id):
                 chosen_bank_code = selected_bank['bank_id']
                 final_alias = custom_acc_name.strip() if custom_acc_name.strip() else selected_bank['bank_name'].strip()
 
-                user_acc_df = pd.read_sql(f"SELECT bank_id FROM user_accounts WHERE user_id = {current_user_id}", local_conn)
+                check_res = supabase.table("user_accounts").select("bank_id").eq("user_id", current_user_id).execute()
+                user_acc_df = pd.DataFrame(check_res.data)
                 exsiting_banks = user_acc_df['bank_id'].astype(str).values if not user_acc_df.empty else []
 
                 if str(chosen_bank_code) in exsiting_banks:
                     st.error("您已經綁定過此銀行了！請選擇其他銀行或刪除原有帳戶後再試。")
                 else:
-                    cursor = local_conn.cursor()
                     try:
-                        cursor.execute(
-                            "INSERT INTO user_accounts (user_id, bank_id, account_name, balance) VALUES (%s, %s, %s, %s)",
-                            (current_user_id, chosen_bank_code, final_alias, init_balance)
-                        )
-                        local_conn.commit()
+                        supabase.table("user_accounts").insert({
+                            "user_id": current_user_id,
+                            "bank_id": chosen_bank_code,
+                            "account_name": final_alias,
+                            "balance": init_balance
+                        }).execute()
                         st.success(f"🎉 成功綁定 {final_alias} 帳戶！")
-                        cursor.close()
                         st.rerun()
                     except Exception as e:
                         st.error(f"綁定失敗：{e}")
-                    finally:
-                        if 'cursor' in locals(): cursor.close()
-        finally:
-            local_conn.close()
+        except Exception as e:
+            st.error(f"載入銀行列表失敗：{e}")
 
 
 # ==========================================
-# 6. 主畫面流程調度中心 (需身分驗證登入後方可見)
+# 6. 主畫面流程調度中心
 # ==========================================
 if st.session_state['user_id'] is not None:
     current_user_id = st.session_state['user_id']
     st.title(f"📊 {st.session_state['username']} 的個人財務管理系統")
 
-    # 開啟大畫面主流程所需的連線
-    conn = get_db_connection()
+    supabase = get_supabase_client()
 
-    # ------------------------------------------
-    # 顯示總資產餘額
-    # ------------------------------------------
-    user_balance_query = f"SELECT ua.account_id, b.bank_id, b.bank_name, ua.account_name, ua.balance FROM user_accounts ua JOIN banks b ON ua.bank_id = b.bank_id WHERE ua.user_id = {current_user_id}"
-    user_balance_df = pd.read_sql(user_balance_query, conn)
-    if user_balance_df.empty:
-        total_balance = 0.0
-    else:
-        total_balance = user_balance_df['balance'].sum()
-    col_metric,col_privacy = st.columns([3,1])
+    # 🚀 API 查詢總餘額
+    balance_res = supabase.table("user_accounts").select("balance").eq("user_id", current_user_id).execute()
+    user_balance_df = pd.DataFrame(balance_res.data)
+    
+    total_balance = user_balance_df['balance'].sum() if not user_balance_df.empty else 0.0
 
+    col_metric, col_privacy = st.columns([3, 1])
     with col_privacy:
         st.write("")
-        hide_balance = st.toggle("隱藏餘額", value = False , key = "privacy_mode")
+        hide_balance = st.toggle("隱藏餘額", value=False, key="privacy_mode")
 
     with col_metric:
         if hide_balance:
@@ -215,36 +218,22 @@ if st.session_state['user_id'] is not None:
             st.metric(label="💰總資產餘額", value=f"{total_balance:,.2f} 元")
     st.markdown("---")
 
-    # ------------------------------------------
     # 執行日常記帳局部組件
-    # ------------------------------------------
     render_transaction_form(current_user_id)
     st.markdown("---")
 
-    # ------------------------------------------
-    # 功能 B：歷史明細與錯帳刪除
-    # ------------------------------------------
+    # 🚀 API 查詢歷史明細 (直接讀取你在雲端建好的歷史明細檢視表 v_usertransactions)
     st.subheader("📜 歷史記帳明細與刪除")
-
-    view_query = f"SELECT tx_id, bank_id, bank_name, account_name, category_name, transaction_type, amount, tx_date, description FROM v_usertransactions WHERE user_id = {current_user_id} ORDER BY tx_date DESC"
-
     try:
-        temp_cursor = conn.cursor()
-        history_df = pd.read_sql(view_query, conn)
-        temp_cursor.close()
+        history_res = supabase.table("v_usertransactions").select("*").eq("user_id", current_user_id).order("tx_date", desc=True).execute()
+        history_df = pd.DataFrame(history_res.data)
     except Exception:
-        conn.rollback()
-        backup_query = f"SELECT t.tx_id, ua.bank_id, b.bank_name, ua.account_name, c.category_name, t.transaction_type, t.amount, t.tx_date, t.description FROM transactions t JOIN user_accounts ua ON t.account_id = ua.account_id JOIN banks b ON ua.bank_id = b.bank_id JOIN categories c ON t.category_id = c.category_id WHERE ua.user_id = {current_user_id} ORDER BY t.tx_date DESC"
-        try:
-            history_df = pd.read_sql(backup_query, conn)
-        except Exception:
-            conn.rollback()
-            history_df = pd.DataFrame()
+        history_df = pd.DataFrame()
 
     if history_df.empty:
         st.write("目前尚無任何交易紀錄。")
     else:
-        history_df['tx_date'] = pd.to_datetime(history_df['tx_date'])  # 確保日期格式正確
+        history_df['tx_date'] = pd.to_datetime(history_df['tx_date'])
         current_date = pd.Timestamp.now()
         current_year = current_date.year
         current_month = current_date.month
@@ -262,7 +251,7 @@ if st.session_state['user_id'] is not None:
         if filtered_df.empty:
             st.write(f"目前尚無 {prev_year} 年 {prev_month} ~ {current_month} 月的交易紀錄。")
         else:
-            show_table = filtered_df.drop(columns=['tx_id'])  # 隱藏交易序號
+            show_table = filtered_df.drop(columns=['tx_id', 'user_id'], errors='ignore')
             show_table = show_table.rename(columns={
                 'bank_id': '銀行代碼', 'bank_name': '銀行名稱',
                 'account_name': '帳戶別名', 'category_name': '分類',
@@ -272,7 +261,6 @@ if st.session_state['user_id'] is not None:
             show_table['交易時間'] = pd.to_datetime(show_table['交易時間']).dt.strftime('%Y-%m-%d')
             st.dataframe(show_table, use_container_width=True)
 
-            # Trigger 自動校正餘額刪除區
             st.subheader("⚠️ 記錯帳刪除區")
             tx_to_delete = st.selectbox(
                 "選擇欲刪除的交易序號",
@@ -281,29 +269,18 @@ if st.session_state['user_id'] is not None:
             )
 
             if st.button("確認刪除此筆交易"):
-                cursor = conn.cursor()
                 try:
-                    # 刪除交易紀錄，雲端設定好的 Trigger 會隔空自動將金額校正扣回或加回帳戶餘額！
-                    cursor.execute("DELETE FROM transactions WHERE tx_id = %s", (tx_to_delete['tx_id'],))
-                    conn.commit()
+                    # 🚀 API 刪除紀錄，觸發雲端 Trigger 自動回滾金額
+                    supabase.table("transactions").delete().eq("tx_id", tx_to_delete['tx_id']).execute()
                     st.success(f"交易序號 {tx_to_delete['tx_id']} 已刪除！資料庫 Trigger 已跨時空將金額完美校正。")
-                    cursor.close()
                     st.rerun()
                 except Exception as e:
                     st.error(f"刪除失敗：{e}")
-                finally:
-                    if 'cursor' in locals(): cursor.close()
 
     st.markdown("---")
-
-    # ------------------------------------------
     # 執行開戶綁定局部組件
-    # ------------------------------------------
     render_bank_binding_form(current_user_id)
     st.markdown("---")
-
-    # 主流程結束，隨手將主連線關閉
-    conn.close()
 
 else:
     st.title("💰 歡迎使用螞蟻記帳系統")
