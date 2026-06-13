@@ -313,7 +313,7 @@ if st.session_state['user_id'] is not None:
             show_table['交易時間'] = pd.to_datetime(show_table['交易時間']).dt.strftime('%Y-%m-%d')
             st.dataframe(show_table, use_container_width=True)
 
-            st.maekdown("⚠️ 記錯帳刪除區")
+            st.markdown("⚠️ 記錯帳刪除區")
             # ✨ 完美修正：加上 if x is not None else "" 的防空盾牌，新帳號再也不會崩潰
             tx_to_delete = st.selectbox(
                 "選擇欲刪除的交易序號",
