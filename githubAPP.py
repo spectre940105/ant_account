@@ -138,12 +138,7 @@ def render_transaction_form(current_user_id):
                     st.success("記帳成功！資產餘額已自動計算更新。")
                     st.rerun()
                 except Exception as e:
-                    err_msg = str(e)
-                    if "餘額不足" in err_msg or "記帳失敗" in err_msg:
-                        clean_msg = "記帳失敗：帳戶餘額不足！"
-                    else:
-                        clean_msg = "交易失敗，請檢查餘額！"
-                    st.error(f"⚠️ {clean_msg}")
+                    st.error(f"❌ 資料庫核心回報錯誤：{str(e)}")
     except Exception as e:
         st.error(f"組件載入異常：{e}")
 
