@@ -182,46 +182,58 @@ def render_bank_binding_form(current_user_id):
             st.error(f"載入銀行列表失敗：{e}")
 
 # ==========================================
-# 6. 銀行名稱修改區局部組件 (Fragment 3)
+# 6. 自訂帳戶別名修正區局部組件 (Fragment 3)
 # ==========================================
 @st.fragment
-def rename_bankname(current_user_id):
-    st.subheader("銀行名稱修正區")
+def rename_user_account_alias(current_user_id):
+    st.subheader("修改個人帳戶別名")
     supabase = get_supabase_client()
 
+    # 1. 撈出「這個登入使用者」自己擁有的所有帳戶（含對應的銀行官方名稱）
     try:
-        banks_df = supabase.table("banks").select("*").execute().data
-    except Exception as e:
-        banks_df = []
+        acc_res = supabase.table("user_accounts").select("account_id, bank_id, account_name, balance").eq("user_id", current_user_id).execute()
+        user_acc_df = pd.DataFrame(acc_res.data)
+        
+        bank_res = supabase.table("banks").select("bank_id, bank_name").execute()
+        bank_df = pd.DataFrame(bank_res.data)
+        
+        if not user_acc_df.empty and not bank_df.empty:
+            user_acc_df = user_acc_df.merge(bank_df, on="bank_id", how="left")
+    except Exception:
+        user_acc_df = pd.DataFrame()
     
-    if banks_df and len(banks_df) > 0:
-        selected_bank = st.selectbox(
-            "選擇要修改名稱的銀行",
-            options=banks_df,
-            format_func=lambda x: f"{x.get('bank_id', '無ID')} | {x.get('bank_name', '無名稱')}" if x is not None else "",
-            key="rename_bank_select"
+    if not user_acc_df.empty:
+        # 讓使用者在下拉選單中看見他有哪些帳戶
+        user_acc_df['selectbox_display'] = user_acc_df.apply(lambda row: f"【{row.get('bank_name', '未知銀行')}】{row.get('account_name')} (目前餘額: {int(float(row.get('balance', 0)))})", axis=1)
+        
+        selected_account = st.selectbox(
+            "選擇要重新命名的個人帳戶",
+            options=user_acc_df.to_dict('records'),
+            format_func=lambda x: x.get('selectbox_display', '') if x is not None else "",
+            key="rename_account_select"
         )
         
-        current_name = selected_bank.get('bank_name', '') if selected_bank else ''
-        new_bank_name = st.text_input("輸入新的銀行名稱", value=current_name, key="rename_bank_input")
+        # 安全取得當前使用者自訂的別名作為輸入框預設值
+        current_alias = selected_account.get('account_name', '') if selected_account else ''
+        new_account_name = st.text_input("輸入新的帳戶別名 (例如：常用生活費、非必要支出金庫)", value=current_alias, key="rename_account_input")
         
-        if st.button("確認修改銀行名稱", key="rename_bank_btn") and selected_bank:
-            try:
-                bid = selected_bank.get('bank_id')
-                if bid:
-                    supabase.table("banks")\
-                        .update({"bank_name": new_bank_name})\
-                        .eq("bank_id", bid)\
+        if st.button("確認修改帳戶別名", key="rename_account_btn") and selected_account:
+            if not new_account_name.strip():
+                st.error("帳戶別名不能留空喔！")
+            else:
+                try:
+                    # 2. 精準 UPDATE 對應的 account_id，只動 account_name 欄位
+                    supabase.table("user_accounts")\
+                        .update({"account_name": new_account_name.strip()})\
+                        .eq("account_id", selected_account['account_id'])\
                         .execute()
                         
-                    st.success(f"🎉 銀行名稱已成功修改為：{new_bank_name}！")
+                    st.success(f"🎉 帳戶別名已成功修改為：{new_account_name.strip()}！")
                     st.rerun()
-                else:
-                    st.error("找不到該銀行的 ID，無法修改。")
-            except Exception as e:
-                st.error(f"修改失敗：{str(e)}")
+                except Exception as e:
+                    st.error(f"修改失敗：{str(e)}")
     else:
-        st.info("💡 目前資料庫中沒有銀行資料。")
+        st.info("💡 您目前尚未綁定任何銀行帳戶")
     
 # ==========================================
 # 7. 主畫面流程調度中心
@@ -315,7 +327,7 @@ if st.session_state['user_id'] is not None:
     render_bank_binding_form(current_user_id)
     st.markdown("---")
     # 執行修改銀行名稱局部組件 (放在最底部，安全又精準)
-    rename_bankname(current_user_id)
+    rename_user_account_alias(current_user_id)
 
 else:
     st.title("💰 歡迎使用螞蟻記帳系統")
