@@ -267,7 +267,7 @@ if st.session_state['user_id'] is not None:
                 try:
                     # 🚀 API 刪除紀錄，觸發雲端 Trigger 自動回滾金額
                     supabase.table("transactions").delete().eq("tx_id", tx_to_delete['tx_id']).execute()
-                    st.success(f"交易序號 {tx_to_delete['tx_id']} 已刪除！資料庫 Trigger 已跨時空將金額完美校正。")
+                    st.success(f"交易序號 {tx_to_delete['tx_id']} 已刪除！")
                     st.rerun()
                 except Exception as e:
                     st.error(f"刪除失敗：{e}")
