@@ -7,7 +7,8 @@ import pandas as pd
 # 1. 資料庫連線設定 
 # ==========================================
 def get_db_connection():
-    return psycopg2.connect(st.secrets["general"]["db_uri"])
+    conn = psycopg2.connect(st.secrets["general"]["db_uri"])
+    return conn
 # ==========================================
 # 2. 初始化 Session State (身分驗證狀態管理)
 # ==========================================
