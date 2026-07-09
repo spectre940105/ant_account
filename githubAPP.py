@@ -333,8 +333,8 @@ if st.session_state['user_id'] is not None:
         else:
             show_table = filtered_df.drop(columns=['tx_id', 'user_id'], errors='ignore')
             show_table = show_table.rename(columns={
-                'bank_id': '銀行代碼', 'bank_name': '銀行名稱',
-                'account_name': '帳戶別名', 'category_name': '分類',
+                'bank_id': '銀行代碼', 'bank_name': '銀行名稱'
+                , 'category_name': '分類',
                 'transaction_type': '收支類型', 'amount': '金額',
                 'tx_date': '交易時間', 'description': '備註'
             })
